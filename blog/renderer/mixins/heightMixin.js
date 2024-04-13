@@ -1,14 +1,12 @@
+import { computed } from 'vue';
+import {isMobileBrowser} from "../utils.js";
 
-export default () => {
-    return {
-        computed: {
-            heightWithoutAppBar() {
-                if (this.isMobile()) {
-                    return 'height: calc(100dvh - 56px)'
-                } else {
-                    return 'height: calc(100dvh - 48px)'
-                }
-            },
-        }
+const heightWithoutAppBar = computed(()=>{
+    if (isMobileBrowser()) {
+        return 'height: calc(100dvh - 56px)'
+    } else {
+        return 'height: calc(100dvh - 48px)'
     }
-}
+})
+
+export {heightWithoutAppBar}

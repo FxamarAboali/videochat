@@ -60,7 +60,7 @@
   </v-container>
 </template>
 
-<script>
+<script setup>
 import {getHumanReadableDate, hasLength, replaceOrAppend, replaceOrPrepend, setTitle} from "#root/renderer/utils";
 import axios from "axios";
 import debounce from "lodash/debounce";
@@ -72,7 +72,7 @@ import infiniteScrollMixin, {directionBottom, directionTop} from "#root/renderer
 // TODO
 // import {goToPreservingQuery, SEARCH_MODE_POSTS, searchString} from "@/mixins/searchString";
 // import bus, {SEARCH_STRING_CHANGED} from "@/bus/bus"; // TODO
-import heightMixin from "#root/renderer/mixins/heightMixin";
+import { heightWithoutAppBar } from "#root/renderer/mixins/heightMixin";
 import hashMixin from "#root/renderer/mixins/hashMixin";
 import {
     getTopBlogPosition,
@@ -80,12 +80,14 @@ import {
     setTopBlogPosition,
 } from "#root/renderer/store/localStore";
 import {isMobileBrowser} from "#root/renderer/utils.js";
-import { getData } from '#root/renderer/useData';
+import { getData, useData } from '#root/renderer/useData';
 
 const PAGE_SIZE = 40;
 const SCROLLING_THRESHHOLD = 200; // px
 
 const scrollerName = 'BlogList';
+
+const data = useData();
 
 export default {
   mixins: [

@@ -1,4 +1,5 @@
 import debounce from "lodash/debounce";
+import {reactive} from "vue";
 
 export const directionTop = 'top';
 export const directionBottom = 'bottom';
@@ -9,6 +10,29 @@ export const directionBottom = 'bottom';
 // reduceTop(), reduceBottom()
 // onScrollCallback(), afterScrollRestored()
 // onScroll() should be called from template
+
+const infiniteScrollData = reactive(
+    {
+        items: [],
+        observer: null,
+
+        isFirstLoad: true,
+
+        scrollerDiv: null,
+
+        loadedTop: false,
+        loadedBottom: false,
+
+        aDirection: this.initialDirection(),
+
+        scrollerProbeCurrent: 0,
+        scrollerProbePrevious: 0,
+
+        preservedScroll: 0,
+        timeout: null,
+    }
+)
+
 export default (name) => {
   return {
     data() {
