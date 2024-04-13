@@ -17,92 +17,92 @@
     </v-app>
 </template>
 
-<script>
+<script setup>
     import {hasLength, isMobileBrowser, SEARCH_MODE_POSTS} from "./utils.js";
     import {blog, root} from "./router/routes.js";
     import { navigate } from 'vike/client/router';
     import {usePageContext} from "./usePageContext.js";
     import CollapsedSearch from "./CollapsedSearch.vue";
-    import { getData } from '#root/renderer/useData';
+    import { useData } from '#root/renderer/useData';
+    import { computed } from 'vue';
+    import { useLocale } from 'vuetify';
 
-    export default {
-        components: {CollapsedSearch},
-        data() {
-            return getData();
+    const { t } = useLocale();
+
+    const pageContext = usePageContext();
+    const data = useData();
+
+    const searchStringFacade = computed({
+        get() {
+            return pageContext.urlParsed.search[SEARCH_MODE_POSTS];
         },
-        computed: {
-            searchStringFacade: {
-                get() {
-                    const value = this.pageContext.urlParsed.search[SEARCH_MODE_POSTS];
-                    console.log(">>>", value);
-                    return value
-                },
-                set(newVal) {
-                    if (hasLength(newVal)) {
-                        navigate(blog + '?' + SEARCH_MODE_POSTS + "=" + newVal)
-                    } else {
-                        navigate(blog)
-                    }
-                }
+        set(newVal) {
+            if (hasLength(newVal)) {
+                navigate(blog + '?' + SEARCH_MODE_POSTS + "=" + newVal)
+            } else {
+                navigate(blog)
             }
-        },
-        methods: {
-            getDensity() {
-                return isMobileBrowser() ? "comfortable" : "compact";
+        }
+    });
+
+    function getDensity() {
+        return isMobileBrowser() ? "comfortable" : "compact";
+    }
+
+    function getBreadcrumbs() {
+        const ret = [
+            {
+                title: 'Videochat',
+                disabled: false,
+                href: root,
             },
-            getBreadcrumbs() {
-                const ret = [
-                    {
-                        title: 'Videochat',
-                        disabled: false,
-                        href: root,
-                    },
-                    {
-                        title: 'Blog',
-                        disabled: false,
-                        exactPath: true,
-                        href: blog,
-                    },
-                ];
-                // if (this.$route.name == blog_post_name) {
-                //     ret.push(
-                //         {
-                //             title: 'Post #' + this.$route.params.id,
-                //             disabled: false,
-                //             to: blog_post + "/" + this.$route.params.id,
-                //         },
-                //     )
-                // }
-                return ret
+            {
+                title: 'Blog',
+                disabled: false,
+                exactPath: true,
+                href: blog,
             },
-            getProvider() {
-                return {
-                    getModelValue: this.getModelValue,
-                    setModelValue: this.setModelValue,
-                    getShowSearchButton: this.getShowSearchButton,
-                    setShowSearchButton: this.setShowSearchButton,
-                    searchName: this.searchName,
-                    textFieldVariant: 'solo',
-                }
-            },
-            getModelValue() {
-                return this.searchStringFacade
-            },
-            setModelValue(v) {
-                this.searchStringFacade = v
-            },
-            getShowSearchButton() {
-                return this.showSearchButton
-            },
-            setShowSearchButton(v) {
-                this.showSearchButton = v
-            },
-            searchName() {
-                return this.$vuetify.locale.t('$vuetify.search_by_posts')
-            },
-        },
-        created() {
-            this.pageContext = usePageContext();
+        ];
+        // if (this.$route.name == blog_post_name) {
+        //     ret.push(
+        //         {
+        //             title: 'Post #' + this.$route.params.id,
+        //             disabled: false,
+        //             to: blog_post + "/" + this.$route.params.id,
+        //         },
+        //     )
+        // }
+        return ret
+    }
+
+    function getModelValue() {
+        return searchStringFacade.value
+    }
+
+    function setModelValue(v) {
+        searchStringFacade.value = v
+    }
+
+    function getShowSearchButton() {
+        return data.showSearchButton
+    }
+
+    function setShowSearchButton(v) {
+        data.showSearchButton = v
+    }
+
+    function searchName() {
+        return t('$vuetify.search_by_posts')
+    }
+
+    function getProvider() {
+        return {
+            getModelValue: getModelValue,
+            setModelValue: setModelValue,
+            getShowSearchButton: getShowSearchButton,
+            setShowSearchButton: setShowSearchButton,
+            searchName: searchName,
+            textFieldVariant: 'solo',
         }
     }
 
