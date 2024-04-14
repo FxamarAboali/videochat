@@ -66,14 +66,47 @@ import axios from "axios";
 import debounce from "lodash/debounce";
 import Mark from "mark.js";
 import {blog_post, blog_post_name, blogIdPrefix, blogIdHashPrefix, profile} from "#root/renderer/router/routes";
-import infiniteScrollMixin, {directionBottom, directionTop} from "#root/renderer/mixins/infiniteScrollMixin";
+import {
+    infiniteScrollData,
+    cssStr,
+    reduceListIfNeed,
+    onScroll,
+    trySwitchDirection,
+    isTopDirection,
+    restoreScroll,
+    resetInfiniteScrollVars,
+    initialLoad,
+    loadTop,
+    loadBottom,
+    isReady,
+    initScroller,
+    destroyScroller,
+    installScroller,
+    uninstallScroller,
+    reloadItems,
+    directionTop,
+    directionBottom
+} from "#root/renderer/mixins/infiniteScrollMixin";
 // import {mapStores} from "pinia";
 // import {useBlogStore} from "@/store/blogStore";
 // TODO
 // import {goToPreservingQuery, SEARCH_MODE_POSTS, searchString} from "@/mixins/searchString";
 // import bus, {SEARCH_STRING_CHANGED} from "@/bus/bus"; // TODO
 import { heightWithoutAppBar } from "#root/renderer/mixins/heightMixin";
-import hashMixin from "#root/renderer/mixins/hashMixin";
+import {
+    hashMixinData,
+    highlightItemId,
+    getDefaultItemId,
+    setHashes,
+    prepareHashesForLoad,
+    doScrollOnFirstLoad,
+    scrollTo,
+    scrollToOrLoad,
+    setHashAndReloadItems,
+    getMaximumItemId,
+    getMinimumItemId,
+    clearRouteHash,
+} from "#root/renderer/mixins/hashMixin";
 import {
     getTopBlogPosition,
     removeTopBlogPosition,
@@ -81,283 +114,267 @@ import {
 } from "#root/renderer/store/localStore";
 import {isMobileBrowser} from "#root/renderer/utils.js";
 import { getData, useData } from '#root/renderer/useData';
+import {onMounted, onBeforeUnmount, nextTick} from "vue";
+import {useLocale} from "vuetify";
+
+const { t } = useLocale();
 
 const PAGE_SIZE = 40;
 const SCROLLING_THRESHHOLD = 200; // px
 
 const scrollerName = 'BlogList';
 
-const data = useData();
+const data = useData(); // + hashMixinData
 
-export default {
-  mixins: [
-      heightMixin(),
-      infiniteScrollMixin(scrollerName),
-      hashMixin(),
-  ],
-  data() {
-      return getData();
-  },
-  methods: {
-    hasLength,
-    isMobile() {
-        return isMobileBrowser()
-    },
-    getMaxItemsLength() {
-        return 240
-    },
-    getReduceToLength() {
-        return 80 // in case numeric pages, should complement with getMaxItemsLength() and PAGE_SIZE
-    },
-    reduceBottom() {
-      this.items = this.items.slice(0, this.getReduceToLength());
-      this.startingFromItemIdBottom = this.getMaximumItemId();
-    },
-    reduceTop() {
-      this.items = this.items.slice(-this.getReduceToLength());
-      this.startingFromItemIdTop = this.getMinimumItemId();
-    },
-    initialDirection() {
-          return directionBottom
-    },
-    saveScroll(top) {
-        this.preservedScroll = top ? this.getMaximumItemId() : this.getMinimumItemId();
-        console.log("Saved scroll", this.preservedScroll, "in ", scrollerName);
-    },
-    async scrollTop() {
-        return await this.$nextTick(() => {
-            this.scrollerDiv.scrollTop = 0;
-        });
-    },
-    async onFirstLoad(loadedResult) {
-      await this.doScrollOnFirstLoad(blogIdHashPrefix);
-      if (loadedResult === true) {
-          removeTopBlogPosition();
-      }
-    },
-    async doDefaultScroll() {
-      this.loadedTop = true;
-      await this.scrollTop();
-    },
-    getPositionFromStore() {
-      return getTopBlogPosition()
-    },
 
-    async load() {
-        console.log("in load");
-        if (!this.canDrawBlogs()) {
-            return Promise.resolve()
-        }
+function getMaxItemsLength() {
+    return 240
+}
+function getReduceToLength() {
+    return 80 // in case numeric pages, should complement with getMaxItemsLength() and PAGE_SIZE
+}
+function reduceBottom() {
+    data.items = data.items.slice(0, getReduceToLength());
+    hashMixinData.startingFromItemIdBottom = getMaximumItemId();
+}
+function reduceTop() {
+    data.items = data.items.slice(-getReduceToLength());
+    hashMixinData.startingFromItemIdTop = getMinimumItemId();
+}
+function initialDirection() {
+    return directionBottom
+}
+function saveScroll(top) {
+    data.preservedScroll = top ? getMaximumItemId() : getMinimumItemId();
+    console.log("Saved scroll", infiniteScrollData.preservedScroll, "in ", scrollerName);
+}
+async function scrollTop() {
+    await nextTick();
+    data.scrollerDiv.scrollTop = 0;
+}
+async function onFirstLoad(loadedResult) {
+    await doScrollOnFirstLoad(blogIdHashPrefix);
+    if (loadedResult === true) {
+        removeTopBlogPosition();
+    }
+}
+async function doDefaultScroll() {
+    data.loadedTop = true;
+    await scrollTop();
+}
+function getPositionFromStore() {
+    return getTopBlogPosition()
+}
 
-        if (this.items.length) {
-            this.updateTopAndBottomIds();
-            this.performMarking();
-            return Promise.resolve()
-        }
+async function load() {
+    console.log("in load");
+    if (!canDrawBlogs()) {
+        return Promise.resolve()
+    }
 
-        // this.blogStore.incrementProgressCount(); // TODO
-        const { startingFromItemId, hasHash } = this.prepareHashesForLoad();
-        return axios.get(`/api/blog`, {
-            params: {
-                startingFromItemId: startingFromItemId,
-                size: PAGE_SIZE,
-                reverse: this.isTopDirection(),
-                searchString: this.searchString,
-                hasHash: hasHash,
-            },
-        })
-            .then((res) => {
-                const items = res.data;
-                console.log("Get items in ", scrollerName, items, "page", this.startingFromItemIdTop, this.startingFromItemIdBottom);
+    if (data.items.length) {
+        updateTopAndBottomIds();
+        performMarking();
+        return Promise.resolve()
+    }
 
-                // replaceOrPrepend() and replaceOrAppend() for the situation when order has been changed on server,
-                // e.g. some chat has been popped up on sever due to somebody updated it
-                if (this.isTopDirection()) {
-                    replaceOrPrepend(this.items, items);
+    // this.blogStore.incrementProgressCount(); // TODO
+    const { startingFromItemId, hasHash } = prepareHashesForLoad();
+    return axios.get(`/api/blog`, {
+        params: {
+            startingFromItemId: startingFromItemId,
+            size: PAGE_SIZE,
+            reverse: isTopDirection(),
+            //searchString: this.searchString, // TODO get from PageShell.vue
+            searchString: "",
+            hasHash: hasHash,
+        },
+    })
+        .then((res) => {
+            const items = res.data;
+            console.log("Get items in ", scrollerName, items, "page", hashMixinData.startingFromItemIdTop, hashMixinData.startingFromItemIdBottom);
+
+            // replaceOrPrepend() and replaceOrAppend() for the situation when order has been changed on server,
+            // e.g. some chat has been popped up on sever due to somebody updated it
+            if (isTopDirection()) {
+                replaceOrPrepend(data.items, items);
+            } else {
+                replaceOrAppend(data.items, items);
+            }
+
+            if (items.length < PAGE_SIZE) {
+                if (isTopDirection()) {
+                    data.loadedTop = true;
                 } else {
-                    replaceOrAppend(this.items, items);
+                    data.loadedBottom = true;
                 }
+            }
+            updateTopAndBottomIds();
 
-                if (items.length < PAGE_SIZE) {
-                    if (this.isTopDirection()) {
-                        this.loadedTop = true;
-                    } else {
-                        this.loadedBottom = true;
-                    }
-                }
-                this.updateTopAndBottomIds();
+            if (!data.isFirstLoad) {
+                clearRouteHash()
+            }
 
-                if (!this.isFirstLoad) {
-                    this.clearRouteHash()
-                }
+            performMarking();
+            return Promise.resolve(true)
+        }).finally(()=>{
+            // this.blogStore.decrementProgressCount(); // TODO
+        })
+}
+function canDrawBlogs() {
+    return true
+}
 
-                this.performMarking();
-                return Promise.resolve(true)
-            }).finally(()=>{
-                // this.blogStore.decrementProgressCount(); // TODO
-            })
-    },
-    canDrawBlogs() {
-        return true
-    },
+function bottomElementSelector() {
+    return ".blog-last-element"
+}
+function topElementSelector() {
+    return ".blog-first-element"
+}
 
-    bottomElementSelector() {
-        return ".blog-last-element"
-    },
-    topElementSelector() {
-        return ".blog-first-element"
-    },
+function getItemId(id) {
+    return blogIdPrefix + id
+}
 
-    getItemId(id) {
-        return blogIdPrefix + id
-    },
+function scrollerSelector() {
+    return ".my-blog-scroller"
+}
+function reset(skipResetting) {
+    resetInfiniteScrollVars(skipResetting);
 
-    scrollerSelector() {
-        return ".my-blog-scroller"
-    },
-    reset(skipResetting) {
-      this.resetInfiniteScrollVars(skipResetting);
+    hashMixinData.startingFromItemIdTop = null;
+    hashMixinData.startingFromItemIdBottom = null;
+}
 
-      this.startingFromItemIdTop = null;
-      this.startingFromItemIdBottom = null;
-    },
+function getDate(item) {
+    return getHumanReadableDate(item.createDateTime)
+}
 
-    getDate(item) {
-      return getHumanReadableDate(item.createDateTime)
-    },
-
-    performMarking() {
-      // TODO
-      // this.$nextTick(() => {
-      //   if (hasLength(this.searchString)) {
-      //     this.markInstance.unmark();
-      //     this.markInstance.mark(this.searchString);
-      //   }
-      // })
-    },
-    isScrolledToTop() {
-      if (this.scrollerDiv) {
-        return Math.abs(this.scrollerDiv.scrollTop) < SCROLLING_THRESHHOLD
-      } else {
+function performMarking() {
+    // TODO
+    // this.$nextTick(() => {
+    //   if (hasLength(this.searchString)) {
+    //     this.markInstance.unmark();
+    //     this.markInstance.mark(this.searchString);
+    //   }
+    // })
+}
+function isScrolledToTop() {
+    if (data.scrollerDiv) {
+        return Math.abs(data.scrollerDiv.scrollTop) < SCROLLING_THRESHHOLD
+    } else {
         return false
-      }
-    },
-    updateTopAndBottomIds() {
-      this.startingFromItemIdTop = this.getMaximumItemId();
-      this.startingFromItemIdBottom = this.getMinimumItemId();
-    },
+    }
+}
+function updateTopAndBottomIds() {
+    hashMixinData.startingFromItemIdTop = getMaximumItemId();
+    hashMixinData.startingFromItemIdBottom = getMinimumItemId();
+}
 
-    getProfileLink(user) {
-      let url = profile + "/" + user.id;
-      return url;
-    },
-    async onSearchStringChanged() {
-      // Fixes excess delayed (because of debounce) reloading of items when
-      // 1. we've chosen __AVAILABLE_FOR_SEARCH
-      // 2. then go to the Welcome
-      // 3. without this change there will be excess delayed invocation
-      // 4. but we've already destroyed this component, so it will be an error in the log
-      if (this.isReady()) {
-          await this.reloadItems();
-      }
-    },
-    setTopTitle() {
-        setTitle(this.$vuetify.locale.t('$vuetify.blogs'));
-        // this.blogStore.title = this.$vuetify.locale.t('$vuetify.blogs'); // TODO
-    },
-    goToBlog(item) {
-        // TODO
-        // goToPreservingQuery(this.$route, this.$router, { name: blog_post_name, params: { id: item.id} })
-    },
-    getLink(item) {
-        return blog_post + "/" + item.id
-    },
-    async start() {
-        await this.setHashAndReloadItems(true);
-    },
+function getProfileLink(user) {
+    let url = profile + "/" + user.id;
+    return url;
+}
+async function onSearchStringChanged() {
+    // Fixes excess delayed (because of debounce) reloading of items when
+    // 1. we've chosen __AVAILABLE_FOR_SEARCH
+    // 2. then go to the Welcome
+    // 3. without this change there will be excess delayed invocation
+    // 4. but we've already destroyed this component, so it will be an error in the log
+    if (isReady()) {
+        await reloadItems();
+    }
+}
+function setTopTitle() {
+    setTitle(t('$vuetify.blogs'));
+    // this.blogStore.title = this.$vuetify.locale.t('$vuetify.blogs'); // TODO
+}
+function goToBlog(item) {
+    // TODO
+    // goToPreservingQuery(this.$route, this.$router, { name: blog_post_name, params: { id: item.id} })
+}
+function getLink(item) {
+    return blog_post + "/" + item.id
+}
+async function start() {
+    await setHashAndReloadItems(true);
+}
 
-    saveLastVisibleElement() {
-      console.log("saveLastVisibleElement", !this.isScrolledToTop())
-      if (!this.isScrolledToTop()) {
-          const elems = [...document.querySelectorAll(this.scrollerSelector() + " .blog-item-root")].map((item) => {
-              const visible = item.getBoundingClientRect().top > 0
-              return {item, visible}
-          });
+function saveLastVisibleElement() {
+    console.log("saveLastVisibleElement", !isScrolledToTop())
+    if (!isScrolledToTop()) {
+        const elems = [...document.querySelectorAll(scrollerSelector() + " .blog-item-root")].map((item) => {
+            const visible = item.getBoundingClientRect().top > 0
+            return {item, visible}
+        });
 
-          const visible = elems.filter((el) => el.visible);
-          // console.log("visible", visible, "elems", elems);
-          if (visible.length == 0) {
-              console.warn("Unable to get top visible")
-              return
-          }
-          const topVisible = visible[0].item
+        const visible = elems.filter((el) => el.visible);
+        // console.log("visible", visible, "elems", elems);
+        if (visible.length == 0) {
+            console.warn("Unable to get top visible")
+            return
+        }
+        const topVisible = visible[0].item
 
-          const bid = this.getIdFromRouteHash(topVisible.id);
-          console.log("Found bottomPost", topVisible, "blogId", bid);
+        const bid = this.getIdFromRouteHash(topVisible.id);
+        console.log("Found bottomPost", topVisible, "blogId", bid);
 
-          setTopBlogPosition(bid)
-      } else {
-          console.log("Skipped saved topVisible because we are already scrolled to the bottom ")
-      }
-    },
-    beforeUnload() {
-      this.saveLastVisibleElement();
-    },
+        setTopBlogPosition(bid)
+    } else {
+        console.log("Skipped saved topVisible because we are already scrolled to the bottom ")
+    }
+}
+function beforeUnload() {
+    saveLastVisibleElement();
+}
 
-  },
-  computed: {
-      // ...mapStores(useBlogStore), // TODO
-  },
-  created() {
-      this.onSearchStringChanged = debounce(this.onSearchStringChanged, 700, {leading:false, trailing:true});
-      // const pageContext = usePageContext();
-      // // pageContext.routeParams.id
-      // // pageContext.urlParsed
-      // console.log("pc a>", pageContext.urlParsed.search.qm);
-  },
-  async mounted() {
-      // this.blogStore.isShowSearch = true; // TODO
-    this.markInstance = new Mark("div#blog-post-list");
-    this.setTopTitle();
+onSearchStringChanged = debounce(onSearchStringChanged, 700, {leading:false, trailing:true});
+
+// mounted
+onMounted(async ()=>{
+    data.markInstance = new Mark("div#blog-post-list");
+    setTopTitle();
     // this.blogStore.searchType = SEARCH_MODE_POSTS; // TODO
 
-    if (this.canDrawBlogs()) {
-        await this.start();
+    if (canDrawBlogs()) {
+        await start();
     }
-    addEventListener("beforeunload", this.beforeUnload);
+    addEventListener("beforeunload", beforeUnload);
+})
 
-    // TODO
-    // bus.on(SEARCH_STRING_CHANGED + '.' + SEARCH_MODE_POSTS, this.onSearchStringChanged);
-  },
-  beforeUnmount() {
+// before unmount
+onBeforeUnmount(()=>{
     // this.blogStore.isShowSearch = false; // TODO
 
     // an analogue of watch(effectively(chatId)) in MessageList.vue
     // used when the user presses Start in the RightPanel
-    this.saveLastVisibleElement();
+    saveLastVisibleElement();
 
-    this.markInstance.unmark();
-    this.markInstance = null;
-    removeEventListener("beforeunload", this.beforeUnload);
+    data.markInstance.unmark();
+    data.markInstance = null;
+    removeEventListener("beforeunload", beforeUnload);
 
-    this.uninstallScroller();
+    uninstallScroller();
     // TODO
     // bus.off(SEARCH_STRING_CHANGED + '.' + SEARCH_MODE_POSTS, this.onSearchStringChanged);
-  },
-  watch: {
-    '$route': { // TODO check if working in vike
-        handler: async function (newValue, oldValue) {
+})
 
-            // reaction on setting hash
-            if (hasLength(newValue.hash)) {
-                console.log("Changed route hash, going to scroll", newValue.hash)
-                await this.scrollToOrLoad(newValue.hash);
-                return
-            }
-        }
-    }
-  }
-}
+
+// TODO
+//   watch: {
+// '$route': { // TODO check if working in vike
+//     handler: async function (newValue, oldValue) {
+//
+//         // reaction on setting hash
+//         if (hasLength(newValue.hash)) {
+//             console.log("Changed route hash, going to scroll", newValue.hash)
+//             await this.scrollToOrLoad(newValue.hash);
+//             return
+//         }
+//     }
+// }
+// }
+
 </script>
 
 <style lang="stylus">
