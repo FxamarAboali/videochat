@@ -67,6 +67,7 @@ import debounce from "lodash/debounce";
 import Mark from "mark.js";
 import {blog_post, blog_post_name, blogIdPrefix, blogIdHashPrefix, profile} from "#root/renderer/router/routes";
 import {
+    initialDirectionSymbol,
     infiniteScrollData,
     cssStr,
     reduceListIfNeed,
@@ -114,7 +115,7 @@ import {
 } from "#root/renderer/store/localStore";
 import {isMobileBrowser} from "#root/renderer/utils.js";
 import { getData, useData } from '#root/renderer/useData';
-import {onMounted, onBeforeUnmount, nextTick} from "vue";
+import {onMounted, onBeforeUnmount, nextTick, provide} from "vue";
 import {useLocale} from "vuetify";
 
 const { t } = useLocale();
@@ -144,6 +145,8 @@ function reduceTop() {
 function initialDirection() {
     return directionBottom
 }
+provide(initialDirectionSymbol, initialDirection);
+
 function saveScroll(top) {
     data.preservedScroll = top ? getMaximumItemId() : getMinimumItemId();
     console.log("Saved scroll", infiniteScrollData.preservedScroll, "in ", scrollerName);

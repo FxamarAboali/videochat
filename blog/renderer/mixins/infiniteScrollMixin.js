@@ -1,8 +1,10 @@
 import debounce from "lodash/debounce";
-import {reactive, nextTick} from "vue";
+import {reactive, nextTick, inject} from "vue";
 
 const directionTop = 'top';
 const directionBottom = 'bottom';
+
+export const initialDirectionSymbol = Symbol();
 
 // expects getMaxItemsLength(),
 // bottomElementSelector(), topElementSelector(), getItemId(id),
@@ -10,6 +12,8 @@ const directionBottom = 'bottom';
 // reduceTop(), reduceBottom()
 // onScrollCallback(), afterScrollRestored()
 // onScroll() should be called from template
+
+const initialDirection = inject(initialDirectionSymbol);
 
 const infiniteScrollData = reactive(
     {
